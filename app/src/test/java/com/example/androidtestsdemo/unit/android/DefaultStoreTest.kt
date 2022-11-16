@@ -3,7 +3,6 @@ package com.example.androidtestsdemo.unit.android
 import androidx.test.core.app.ApplicationProvider
 import com.example.androidtestsdemo.TheApplication
 import com.example.androidtestsdemo.application.android.DefaultStore
-import com.example.androidtestsdemo.mocks.dagger.components.MockkApplicationComponent
 import com.google.common.truth.Truth.assertThat
 import org.junit.Test
 import org.junit.runner.RunWith
