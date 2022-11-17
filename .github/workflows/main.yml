@@ -1,7 +1,9 @@
 name: CI
 
 on:
-  push: [master]
+  push:
+    branches:
+      - main
 
   workflow_dispatch:
 
@@ -11,12 +13,56 @@ jobs:
 
     steps:
       - uses: actions/checkout@v3
-
-      - name: Build
-        uses: sparkfabrik/android-build-action@v1.0.0
-
-      - name: run tests
-        uses: reactivecircus/android-emulator-runner@v2
+      - uses: actions/setup-java@v3
         with:
-          api-level: 33
-          script: ./gradlew connectedCheck
+          distribution: zulu
+          java-version: 18
+          cache: gradle
+
+      - name: run emulator
+        env:
+          IMAGE: system-images;android-33;google_apis_playstore;x86_64
+          # 'tools/' obsolete and issue annoying messages
+          TOOLS: cmdline-tools/latest
+          # emulator: [emulator/emulator, tools/emulator]
+          EMULATOR: emulator/emulator
+          # gpu: [host, guest, swiftshader_indirect]
+          GPU: swiftshader_indirect
+          DEVICE: Pixel_2_API_33
+          CORES: 1
+        run: |
+          echo "install required dep"
+          # for ubuntu only
+          which apt-get && sudo apt-get install pulseaudio
+          echo "tools: $ANDROID_HOME/$TOOLS"
+          echo "emulator: $EMULATOR"
+          echo "image: $IMAGE"
+          echo "DEVICE: $DEVICE"
+          echo "-gpu: $GPU"
+          echo "-cores: $CORES"
+          echo "sdkmanager --list"
+          $ANDROID_HOME/$TOOLS/bin/sdkmanager --list
+          echo "donwload image"
+          echo "y" | $ANDROID_HOME/$TOOLS/bin/sdkmanager --install $IMAGE
+          echo "apply licenses"
+          echo "y" | $ANDROID_HOME/$TOOLS/bin/sdkmanager --licenses
+          echo "create adv"
+          echo "no" | $ANDROID_HOME/$TOOLS/bin/avdmanager create avd -n $DEVICE -d pixel --package $IMAGE --force
+          $ANDROID_HOME/$EMULATOR -list-avds
+          echo "current version"
+          $ANDROID_HOME/$EMULATOR -version
+          echo "y" | $ANDROID_HOME/$TOOLS/bin/sdkmanager --install emulator
+          echo "updated version"
+          $ANDROID_HOME/$EMULATOR -version
+          echo "acceleration check"
+          $ANDROID_HOME/$EMULATOR -accel-check || true
+          echo "Starting emulator"
+          nohup $ANDROID_HOME/$EMULATOR -gpu $GPU -avd $DEVICE -perf-stat -no-snapshot -no-audio -no-boot-anim -camera-back none -camera-front none -cores $CORES 2>&1 &
+          echo "Waiting for boot to complete..."
+          $ANDROID_HOME/platform-tools/adb wait-for-device shell 'while [[ -z $(getprop sys.boot_completed | tr -d '\r') ]]; do echo "wait..."; sleep 1; done; input keyevent 82'
+          echo "Emulator has finished booting"
+          $ANDROID_HOME/platform-tools/adb devices
+
+      - name: unit tests
+        run: |
+          ./gradlew test
