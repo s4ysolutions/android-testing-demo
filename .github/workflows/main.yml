@@ -9,7 +9,7 @@ on:
 
 jobs:
   build:
-    runs-on: macos-latest
+    runs-on: ubuntu-latest
 
     steps:
       - uses: actions/checkout@v3
@@ -19,50 +19,19 @@ jobs:
           java-version: 18
           cache: gradle
 
-      - name: run emulator
-        env:
-          IMAGE: system-images;android-33;google_apis_playstore;x86_64
-          # 'tools/' obsolete and issue annoying messages
-          TOOLS: cmdline-tools/latest
-          # emulator: [emulator/emulator, tools/emulator]
-          EMULATOR: emulator/emulator
-          # gpu: [host, guest, swiftshader_indirect]
-          GPU: swiftshader_indirect
-          DEVICE: Pixel_2_API_33
-          CORES: 1
+      - name: assemble
         run: |
-          echo "install required dep"
-          # for ubuntu only
-          which apt-get && sudo apt-get install pulseaudio
-          echo "tools: $ANDROID_HOME/$TOOLS"
-          echo "emulator: $EMULATOR"
-          echo "image: $IMAGE"
-          echo "DEVICE: $DEVICE"
-          echo "-gpu: $GPU"
-          echo "-cores: $CORES"
-          echo "sdkmanager --list"
-          $ANDROID_HOME/$TOOLS/bin/sdkmanager --list
-          echo "donwload image"
-          echo "y" | $ANDROID_HOME/$TOOLS/bin/sdkmanager --install $IMAGE
-          echo "apply licenses"
-          echo "y" | $ANDROID_HOME/$TOOLS/bin/sdkmanager --licenses
-          echo "create adv"
-          echo "no" | $ANDROID_HOME/$TOOLS/bin/avdmanager create avd -n $DEVICE -d pixel --package $IMAGE --force
-          $ANDROID_HOME/$EMULATOR -list-avds
-          echo "current version"
-          $ANDROID_HOME/$EMULATOR -version
-          echo "y" | $ANDROID_HOME/$TOOLS/bin/sdkmanager --install emulator
-          echo "updated version"
-          $ANDROID_HOME/$EMULATOR -version
-          echo "acceleration check"
-          $ANDROID_HOME/$EMULATOR -accel-check || true
-          echo "Starting emulator"
-          nohup $ANDROID_HOME/$EMULATOR -gpu $GPU -avd $DEVICE -perf-stat -no-snapshot -no-audio -no-boot-anim -camera-back none -camera-front none -cores $CORES 2>&1 &
-          echo "Waiting for boot to complete..."
-          $ANDROID_HOME/platform-tools/adb wait-for-device shell 'while [[ -z $(getprop sys.boot_completed | tr -d '\r') ]]; do echo "wait..."; sleep 1; done; input keyevent 82'
-          echo "Emulator has finished booting"
-          $ANDROID_HOME/platform-tools/adb devices
+          ./gradlew assemble assembleAndroidTest
 
       - name: unit tests
         run: |
           ./gradlew test
+
+      - name: testLab
+        env:
+          GCP_SERVICE_KEY: ${{ secrets.GCP_SERVICE_KEY }}
+        run: |
+          echo "$GCP_SERVICE_KEY" > service-key.json
+          gcloud auth activate-service-account --key-file service-key.json
+          gcloud config set project androidtestsdemo-1
+          gcloud firebase test android run --type instrumentation --app ./app/build/outputs/apk/debug/app-debug.apk --test ./app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk --device model=Pixel2,version=30 --use-orchestrator
